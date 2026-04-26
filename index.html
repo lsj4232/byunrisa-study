@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>변리사 민사소송법 기출 학습</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@300;400;500;700&family=Noto+Sans+KR:wght@300;400;500&display=swap" rel="stylesheet">
@@ -1055,8 +1058,14 @@
     .btn-random { font-size: 0.78rem; padding: 6px 10px; }
     .progress-info { font-size: 0.72rem; }
 
-    /* Toggle buttons should sit above the title without overlap */
-    .subject-toggle, .statute-toggle { top: 10px; padding: 5px 10px; font-size: 0.72rem; }
+    /* Toggle buttons should sit above the title without overlap.
+       Make them clearly visible on phones (z-index above the fixed header,
+       solid accent color so they don't blend with the page background). */
+    .subject-toggle, .statute-toggle {
+      top: 8px; padding: 6px 12px; font-size: 0.78rem; z-index: 60;
+      background: var(--accent); color: #fff; border-color: var(--accent);
+    }
+    .subject-toggle:hover, .statute-toggle:hover { color: #fff; }
 
     main { padding: 10px; gap: 12px; }
     .question-panel, .answer-panel { min-height: 300px; border-radius: 8px; }
