@@ -1744,15 +1744,13 @@ function renderAnswer(text, hlRanges) {
     const lineEnd = pos + line.length;
     const trimmed = line.trim();
 
-    // For headers, we render the (trimmed) header but track the original
-    // line span for offset purposes. Highlights don't apply inside headers
-    // (they'd visually clash with the colored header style anyway).
     if (!trimmed) {
       html += `<span class="ans-blank" data-line-start="${lineStart}"></span>`;
     } else if (/^\d+\./.test(trimmed)) {
       const cls = (trimmed.includes('사안해결') || trimmed.includes('설문해결'))
         ? 'ans-resolution' : 'ans-section-header';
-      html += `<div class="${cls}" data-line-start="${lineStart}">${escHtml(trimmed)}</div>`;
+      const inner = _renderLine(text, lineStart, lineEnd, sets) || '&nbsp;';
+      html += `<div class="${cls}" data-line-start="${lineStart}">${inner}</div>`;
     } else {
       const subMatch = trimmed.match(/^(\([0-9]+\)|[ⅠⅡⅢⅣⅤ])\s*(.*)$/);
       const subItemRe = /([ⅰⅱⅲⅳⅴⅵⅶⅷⅸ]\)|①|②|③|④|⑤|⑥|⑦|⑧|⑨)/;
@@ -1763,22 +1761,20 @@ function renderAnswer(text, hlRanges) {
         const rest = subMatch[2];
         const m = rest.match(subItemRe);
         if (m && m.index >= 0) {
-          const headerText = rest.slice(0, m.index).trim();
           const bodyText = rest.slice(m.index).trim();
-          const headerLine = headerText ? `${marker} ${headerText}` : marker;
-          html += `<div class="ans-subsection" data-line-start="${lineStart}">${escHtml(headerLine)}</div>`;
-          // Locate bodyText's absolute character offset inside the source so
-          // the body span's data-line-start points to the body's real start.
-          // This keeps selection→offset accurate and lets highlights apply.
           let bodyOffInLine = line.indexOf(bodyText);
           if (bodyOffInLine < 0) bodyOffInLine = line.length - bodyText.length;
           const bodyAbsStart = lineStart + bodyOffInLine;
           const bodyAbsEnd = bodyAbsStart + bodyText.length;
+          // Header part: from lineStart up to where body begins
+          const headerInner = _renderLine(text, lineStart, bodyAbsStart, sets) || '&nbsp;';
+          html += `<div class="ans-subsection" data-line-start="${lineStart}">${headerInner}</div>`;
           const inner = _renderLine(text, bodyAbsStart, bodyAbsEnd, sets) || '&nbsp;';
           html += `<span class="ans-line" data-line-start="${bodyAbsStart}">${inner}</span>`;
           handled = true;
         } else {
-          html += `<div class="ans-subsection" data-line-start="${lineStart}">${escHtml(trimmed)}</div>`;
+          const inner = _renderLine(text, lineStart, lineEnd, sets) || '&nbsp;';
+          html += `<div class="ans-subsection" data-line-start="${lineStart}">${inner}</div>`;
           handled = true;
         }
       }
