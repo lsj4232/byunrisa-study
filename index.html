@@ -2552,7 +2552,8 @@ function bindEvents() {
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     if (e.key === 'ArrowLeft') document.getElementById('btnPrev').click();
     if (e.key === 'ArrowRight') document.getElementById('btnNext').click();
-    if (e.key === ' ') { e.preventDefault(); answerRevealed ? hideAnswer() : revealAnswer(); }
+    if (e.key === 'Enter') { e.preventDefault(); answerRevealed ? hideAnswer() : revealAnswer(); }
+    if (e.key === ' ') { e.preventDefault(); toggleStopwatch(); }
     if (e.key === 'r' || e.key === 'R') document.getElementById('btnRandom').click();
   });
 
