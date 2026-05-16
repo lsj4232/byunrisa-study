@@ -1026,6 +1026,7 @@
       <span class="a-title">모범 답안</span>
       <div>
         <button class="btn-quiz" id="btnHlResetAnswer" title="이 설문에 친 형광펜 모두 지우기">🖍 리셋</button>
+        <button class="btn-quiz" id="btnCopyAnswer" title="답안 전체 텍스트를 클립보드에 복사">📋 답안 복사</button>
         <button class="btn-quiz" id="btnQuiz" title="답안의 핵심 단어에 빈칸을 만들어 학습">📝 빈칸퀴즈</button>
         <button class="btn-toggle" id="btnToggle">정답 보기</button>
       </div>
@@ -1938,6 +1939,31 @@ function bindEvents() {
     currentHighlights.answer = [];
     saveHighlightsFor('answer', prob, sq);
     rerenderHlArea('answer');
+  });
+
+  // ── Copy answer to clipboard ──
+  document.getElementById('btnCopyAnswer').addEventListener('click', async () => {
+    if (filtered.length === 0) return;
+    const { sq } = filtered[order[cursor]];
+    const text = sq.answer || '';
+    if (!text) return;
+    const btn = document.getElementById('btnCopyAnswer');
+    const original = btn.textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = '✅ 복사됨!';
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); btn.textContent = '✅ 복사됨!'; }
+      catch { btn.textContent = '⚠ 복사 실패'; }
+      document.body.removeChild(ta);
+    }
+    setTimeout(() => { btn.textContent = original; }, 1200);
   });
 
   document.getElementById('overlay').addEventListener('click', revealAnswer);
