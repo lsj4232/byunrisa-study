@@ -37,6 +37,7 @@ ANSWER_OVERRIDES = {
 # Hand-supplied question text overrides for cases where extraction loses
 # part of the prompt.
 QUESTION_OVERRIDES = {
+    ('61회', 3, 2): "항소심에서 변론을 종결할 때까지 A 토지의 수용 여부는 확정되지 못할 것으로 예상된다. 그럼에도 불구하고 이러한 제2의 소를 제기할 수 있는 이유를 설명하시오.",
     ('61회', 3, 3): "항소법원은 심리 후 두 개의 청구를 전부 인용하는 판결을 하였다. 乙은 이 가운데 제2의 소에 대한 판결에만 상고하였다. 이러한 경우 甲은 '제1의 소에 대한 판결에는 상고하지 않았으므로 이 판결은 확정되었다'는 이유로 A토지에 대한 소유권이전등기절차를 실행할 수 있는지 검토하시오.",
 }
 
