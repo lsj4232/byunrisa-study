@@ -970,6 +970,103 @@
     .hl-float-btn { font-size: 0.72rem; padding: 4px 8px; }
   }
 
+  /* ── Stats button + modal ────────────────────────────────── */
+  .btn-stats {
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 6px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-stats:hover { background: #ecfdf5; color: #047857; border-color: #10b981; }
+
+  .stats-modal { display: none; position: fixed; inset: 0; z-index: 200; }
+  .stats-modal.open { display: flex; align-items: center; justify-content: center; }
+  .stats-modal-bg { position: absolute; inset: 0; background: rgba(0,0,0,0.45); }
+  .stats-modal-content {
+    position: relative;
+    background: var(--surface);
+    border-radius: 12px;
+    width: 92%;
+    max-width: 560px;
+    max-height: 85vh;
+    overflow-y: auto;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+    font-family: 'Noto Sans KR', sans-serif;
+  }
+  .stats-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .stats-header h2 { font-size: 1.05rem; font-weight: 700; margin: 0; color: var(--text); }
+  .stats-close {
+    background: none; border: none; cursor: pointer;
+    font-size: 1.5rem; color: var(--text-muted); padding: 0 4px; line-height: 1;
+  }
+  .stats-close:hover { color: var(--text); }
+  .stats-body { padding: 18px 20px 22px; }
+  .stats-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .stats-card {
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 12px 8px;
+    text-align: center;
+  }
+  .stats-card-label { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 4px; }
+  .stats-card-value { font-size: 1.3rem; font-weight: 700; color: var(--accent); }
+  .stats-section-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    margin: 18px 0 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .stats-accuracy-big { font-size: 1.4rem; font-weight: 700; color: var(--accent); margin-top: 4px; }
+  .stats-accuracy-muted { font-size: 0.85rem; color: var(--text-muted); margin-top: 4px; }
+  .stats-exam-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 0;
+    font-size: 0.8rem;
+  }
+  .stats-exam-label { width: 56px; color: var(--text); }
+  .stats-exam-bar { flex: 1; background: var(--surface2); border-radius: 4px; height: 10px; overflow: hidden; }
+  .stats-exam-fill { height: 100%; background: var(--accent); transition: width 0.3s; }
+  .stats-exam-pct { font-size: 0.74rem; color: var(--text-muted); width: 60px; text-align: right; }
+  .stats-weak {
+    padding: 8px 12px;
+    background: #fef2f2;
+    border-left: 3px solid #dc2626;
+    border-radius: 4px;
+    margin-top: 6px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.82rem;
+  }
+  .stats-weak-exam { font-weight: 600; color: #991b1b; }
+  .stats-weak-acc { color: #7f1d1d; }
+  @media (max-width: 600px) {
+    .btn-stats { font-size: 0.72rem; padding: 4px 10px; }
+    .stats-card-value { font-size: 1.1rem; }
+    .stats-card-label { font-size: 0.65rem; }
+    .stats-section-title { font-size: 0.78rem; }
+  }
+
   /* ── Auth / sync UI ──────────────────────────────────────── */
   .auth-area {
     display: flex;
@@ -1050,6 +1147,7 @@
     <span class="filter-label">회차:</span>
   </div>
   <button class="btn-random" id="btnRandom">🔀 랜덤 문제</button>
+  <button class="btn-stats" id="btnStats" title="학습 통계 보기">📊 통계</button>
   <span class="progress-info" id="progressInfo"></span>
   <div class="auth-area">
     <span class="sync-status" id="syncStatus" style="display:none;"></span>
@@ -1171,6 +1269,18 @@
 
 <button class="hl-float-btn" id="hlFloatBtn">🖍 형광펜</button>
 
+<!-- Stats modal -->
+<div class="stats-modal" id="statsModal">
+  <div class="stats-modal-bg" id="statsModalBg"></div>
+  <div class="stats-modal-content">
+    <div class="stats-header">
+      <h2>📊 학습 통계</h2>
+      <button class="stats-close" id="statsClose" aria-label="닫기">×</button>
+    </div>
+    <div class="stats-body" id="statsBody"></div>
+  </div>
+</div>
+
 <button class="statute-toggle" id="statuteToggle">📖 조문 사이드바</button>
 <aside class="statute-panel" id="statutePanel">
   <div class="statute-handle" id="statuteHandle" title="접기 / 펼치기">‹</div>
@@ -1225,6 +1335,23 @@ function getAttemptCount(prob, sq, kind) {
 }
 function incrementAttemptCount(prob, sq, kind) {
   localStorage.setItem(attemptKey(prob, sq, kind), String(getAttemptCount(prob, sq, kind) + 1));
+}
+
+// ── Per-day study count (used for streak + today/week metrics) ──
+function studyLogKey(date) {
+  const d = date || new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `studylog:${yyyy}-${mm}-${dd}`;
+}
+function getStudyCount(date) {
+  const n = parseInt(localStorage.getItem(studyLogKey(date)), 10);
+  return isNaN(n) ? 0 : n;
+}
+function recordStudyEvent() {
+  const k = studyLogKey();
+  localStorage.setItem(k, String(getStudyCount() + 1));
 }
 
 // ── Spaced repetition (간격 반복) — simple intervals ──
@@ -2142,6 +2269,7 @@ function bindEvents() {
     const { prob, sq } = filtered[order[cursor]];
     incrementAttemptCount(prob, sq, kind);
     updateSrs(prob, sq, kind);
+    recordStudyEvent();
     const btn = document.getElementById(kind === 'wrong' ? 'btnMarkWrong' : 'btnMarkCorrect');
     const disp = document.getElementById(kind === 'wrong' ? 'wrongCountDisplay' : 'correctCountDisplay');
     disp.textContent = getAttemptCount(prob, sq, kind);
@@ -2392,13 +2520,132 @@ function bindEvents() {
   });
 }
 
+// ── Study stats modal ──────────────────────────────────────
+function computeStats() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const todayCount = getStudyCount(today);
+
+  let weekCount = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    weekCount += getStudyCount(d);
+  }
+
+  // Streak: walk back from today (or yesterday if today empty) counting consecutive days.
+  let streak = 0;
+  let cursor = new Date(today);
+  if (getStudyCount(cursor) === 0) cursor.setDate(cursor.getDate() - 1);
+  while (getStudyCount(cursor) > 0) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  // Per-exam stats — current subject only
+  const examStats = {};
+  for (const it of subjectItems(activeSubject)) {
+    const key = it.prob.exam;
+    if (!examStats[key]) examStats[key] = { total: 0, attempted: 0, correct: 0, wrong: 0 };
+    examStats[key].total++;
+    const w = getAttemptCount(it.prob, it.sq, 'wrong');
+    const c = getAttemptCount(it.prob, it.sq, 'correct');
+    if (w > 0 || c > 0) examStats[key].attempted++;
+    examStats[key].correct += c;
+    examStats[key].wrong += w;
+  }
+  let totalCorrect = 0, totalWrong = 0;
+  for (const e of Object.values(examStats)) {
+    totalCorrect += e.correct;
+    totalWrong += e.wrong;
+    const tot = e.correct + e.wrong;
+    e.accuracy = tot > 0 ? Math.round(e.correct * 100 / tot) : null;
+  }
+  const accuracy = (totalCorrect + totalWrong) > 0
+    ? Math.round(totalCorrect * 100 / (totalCorrect + totalWrong))
+    : null;
+
+  const weakExams = Object.entries(examStats)
+    .filter(([, e]) => e.correct + e.wrong > 0)
+    .sort((a, b) => a[1].accuracy - b[1].accuracy)
+    .slice(0, 3);
+
+  return { todayCount, weekCount, streak, accuracy, totalCorrect, totalWrong, examStats, weakExams };
+}
+
+function openStatsModal() {
+  const s = computeStats();
+  const body = document.getElementById('statsBody');
+  const examRows = Object.entries(s.examStats)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([exam, e]) => {
+      const pct = e.total ? Math.round(e.attempted * 100 / e.total) : 0;
+      return `
+        <div class="stats-exam-row">
+          <span class="stats-exam-label">${escHtml(exam)}</span>
+          <div class="stats-exam-bar"><div class="stats-exam-fill" style="width:${pct}%"></div></div>
+          <span class="stats-exam-pct">${e.attempted}/${e.total}</span>
+        </div>`;
+    }).join('');
+
+  const weakHtml = s.weakExams.length === 0
+    ? `<div class="stats-accuracy-muted">아직 ❌/✅ 표시한 설문이 없습니다.</div>`
+    : s.weakExams.map(([exam, e]) => `
+        <div class="stats-weak">
+          <span class="stats-weak-exam">${escHtml(exam)}</span>
+          <span class="stats-weak-acc">정답률 ${e.accuracy}% · ${e.correct}/${e.correct + e.wrong}</span>
+        </div>`).join('');
+
+  body.innerHTML = `
+    <div class="stats-cards">
+      <div class="stats-card">
+        <div class="stats-card-label">오늘 학습</div>
+        <div class="stats-card-value">${s.todayCount}</div>
+      </div>
+      <div class="stats-card">
+        <div class="stats-card-label">최근 7일</div>
+        <div class="stats-card-value">${s.weekCount}</div>
+      </div>
+      <div class="stats-card">
+        <div class="stats-card-label">연속 학습일</div>
+        <div class="stats-card-value">${s.streak > 0 ? '🔥 ' + s.streak : '0'}</div>
+      </div>
+    </div>
+
+    <div class="stats-section-title">전체 정답률</div>
+    ${s.accuracy === null
+      ? `<div class="stats-accuracy-muted">아직 기록 없음 — ❌/✅ 버튼으로 표시하면 집계됩니다.</div>`
+      : `<div class="stats-accuracy-big">${s.accuracy}%</div>
+         <div class="stats-accuracy-muted">정답 ${s.totalCorrect} · 오답 ${s.totalWrong}</div>`}
+
+    <div class="stats-section-title">회차별 진행률 (${escHtml(activeSubject)})</div>
+    ${examRows || '<div class="stats-accuracy-muted">데이터 없음</div>'}
+
+    <div class="stats-section-title">약점 회차 TOP ${s.weakExams.length || 3}</div>
+    ${weakHtml}
+  `;
+  document.getElementById('statsModal').classList.add('open');
+}
+function closeStatsModal() {
+  document.getElementById('statsModal').classList.remove('open');
+}
+document.getElementById('btnStats').addEventListener('click', openStatsModal);
+document.getElementById('statsClose').addEventListener('click', closeStatsModal);
+document.getElementById('statsModalBg').addEventListener('click', closeStatsModal);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('statsModal').classList.contains('open')) {
+    closeStatsModal();
+  }
+});
+
 // ── Firebase auth + Firestore sync ─────────────────────────
 // Local-first: localStorage is primary. On sign-in we pull the cloud doc
 // and merge (max() for counters, cloud-wins for highlights/notes).
 // Any subsequent localStorage write to a synced prefix triggers a debounced
 // push of the full snapshot.
-const SYNC_PREFIXES = ['viewcount:', 'wrongcount:', 'correctcount:', 'hl:', 'note:', 'srs:'];
-const COUNTER_PREFIXES = ['viewcount:', 'wrongcount:', 'correctcount:'];
+const SYNC_PREFIXES = ['viewcount:', 'wrongcount:', 'correctcount:', 'hl:', 'note:', 'srs:', 'studylog:'];
+const COUNTER_PREFIXES = ['viewcount:', 'wrongcount:', 'correctcount:', 'studylog:'];
 let currentUid = null;
 let pushTimer = null;
 let suppressPush = false;   // true while we're applying a cloud snapshot
