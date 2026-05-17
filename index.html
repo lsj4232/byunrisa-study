@@ -967,7 +967,71 @@
     /* Floating selection buttons sized down */
     .hl-float-btn { font-size: 0.72rem; padding: 4px 8px; }
   }
+
+  /* ── Auth / sync UI ──────────────────────────────────────── */
+  .auth-area {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-auth {
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 0.78rem;
+    padding: 5px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .btn-auth:hover { border-color: var(--accent); color: var(--accent); }
+  .auth-user {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+  .auth-user img {
+    width: 22px; height: 22px; border-radius: 50%;
+  }
+  .sync-status {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--surface2);
+    white-space: nowrap;
+  }
+  .sync-status.syncing { color: #b45309; background: #fff7ed; }
+  .sync-status.synced { color: #15803d; background: #f0fdf4; }
+  .sync-status.error { color: #b91c1c; background: #fef2f2; }
+  @media (max-width: 600px) {
+    .btn-auth { font-size: 0.7rem; padding: 4px 9px; }
+    .auth-user { font-size: 0.7rem; }
+    .auth-user img { width: 18px; height: 18px; }
+    .sync-status { font-size: 0.65rem; padding: 2px 6px; }
+  }
 </style>
+
+<!-- Firebase SDK (compat build — exposes global `firebase`) -->
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyBZvooGWyjemYlTjbB3d3ARlkcpqVC6mdM",
+    authDomain: "minso-dd888.firebaseapp.com",
+    projectId: "minso-dd888",
+    storageBucket: "minso-dd888.firebasestorage.app",
+    messagingSenderId: "163089219565",
+    appId: "1:163089219565:web:407ee50395a37d5ae2f1e4"
+  };
+  firebase.initializeApp(firebaseConfig);
+  window.__fbAuth = firebase.auth();
+  window.__fbDb = firebase.firestore();
+  window.__fbProvider = new firebase.auth.GoogleAuthProvider();
+</script>
 </head>
 <body>
 
@@ -985,6 +1049,11 @@
   </div>
   <button class="btn-random" id="btnRandom">🔀 랜덤 문제</button>
   <span class="progress-info" id="progressInfo"></span>
+  <div class="auth-area">
+    <span class="sync-status" id="syncStatus" style="display:none;"></span>
+    <span class="auth-user" id="authUser" style="display:none;"><img id="authPhoto" alt=""><span id="authName"></span></span>
+    <button class="btn-auth" id="btnAuth">🔑 로그인</button>
+  </div>
 </header>
 
 <main>
@@ -2272,6 +2341,154 @@ function bindEvents() {
     rerenderHlArea(area);
   });
 }
+
+// ── Firebase auth + Firestore sync ─────────────────────────
+// Local-first: localStorage is primary. On sign-in we pull the cloud doc
+// and merge (max() for counters, cloud-wins for highlights/notes).
+// Any subsequent localStorage write to a synced prefix triggers a debounced
+// push of the full snapshot.
+const SYNC_PREFIXES = ['viewcount:', 'wrongcount:', 'correctcount:', 'hl:', 'note:'];
+const COUNTER_PREFIXES = ['viewcount:', 'wrongcount:', 'correctcount:'];
+let currentUid = null;
+let pushTimer = null;
+let suppressPush = false;   // true while we're applying a cloud snapshot
+
+function isSyncedKey(k) { return SYNC_PREFIXES.some(p => k.startsWith(p)); }
+function isCounterKey(k) { return COUNTER_PREFIXES.some(p => k.startsWith(p)); }
+
+function snapshotLocal() {
+  const out = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (isSyncedKey(k)) out[k] = localStorage.getItem(k);
+  }
+  return out;
+}
+
+function setSyncStatus(state, msg) {
+  const el = document.getElementById('syncStatus');
+  if (!el) return;
+  if (!state) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.className = `sync-status ${state}`;
+  el.textContent = msg;
+}
+
+async function pullAndMerge(uid) {
+  setSyncStatus('syncing', '☁ 동기화 중…');
+  try {
+    const ref = window.__fbDb.collection('users').doc(uid);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      // First sign-in on any device — push local to cloud
+      await pushNow(uid);
+      setSyncStatus('synced', '✓ 동기화됨');
+      return;
+    }
+    const cloud = snap.data().store || {};
+    suppressPush = true;
+    try {
+      const localKeys = new Set();
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (isSyncedKey(k)) localKeys.add(k);
+      }
+      const allKeys = new Set([...Object.keys(cloud), ...localKeys]);
+      for (const k of allKeys) {
+        const localV = localStorage.getItem(k);
+        const cloudV = cloud[k];
+        if (isCounterKey(k)) {
+          const merged = Math.max(parseInt(localV, 10) || 0, parseInt(cloudV, 10) || 0);
+          localStorage.setItem(k, String(merged));
+        } else {
+          // hl: / note: — cloud wins if present, otherwise keep local
+          if (cloudV != null) localStorage.setItem(k, cloudV);
+        }
+      }
+    } finally {
+      suppressPush = false;
+    }
+    // Push merged state back (in case local had higher counters)
+    await pushNow(uid);
+    setSyncStatus('synced', '✓ 동기화됨');
+    // Re-render so newly synced counters/highlights show up
+    if (typeof showCurrent === 'function') showCurrent();
+  } catch (e) {
+    console.error('sync pull failed', e);
+    setSyncStatus('error', '⚠ 동기화 실패');
+  }
+}
+
+async function pushNow(uid) {
+  const ref = window.__fbDb.collection('users').doc(uid);
+  await ref.set({
+    store: snapshotLocal(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+function pushDebounced() {
+  if (suppressPush || !currentUid) return;
+  if (pushTimer) clearTimeout(pushTimer);
+  setSyncStatus('syncing', '☁ 저장 중…');
+  pushTimer = setTimeout(async () => {
+    try {
+      await pushNow(currentUid);
+      setSyncStatus('synced', '✓ 동기화됨');
+    } catch (e) {
+      console.error('sync push failed', e);
+      setSyncStatus('error', '⚠ 저장 실패');
+    }
+  }, 1000);
+}
+
+// Monkey-patch localStorage.setItem to auto-push on synced keys
+(function hookLocalStorage() {
+  const origSet = Storage.prototype.setItem;
+  const origRem = Storage.prototype.removeItem;
+  Storage.prototype.setItem = function (k, v) {
+    origSet.call(this, k, v);
+    if (this === localStorage && isSyncedKey(k)) pushDebounced();
+  };
+  Storage.prototype.removeItem = function (k) {
+    origRem.call(this, k);
+    if (this === localStorage && isSyncedKey(k)) pushDebounced();
+  };
+})();
+
+function updateAuthUI(user) {
+  const btn = document.getElementById('btnAuth');
+  const userEl = document.getElementById('authUser');
+  if (user) {
+    btn.textContent = '🚪 로그아웃';
+    userEl.style.display = '';
+    document.getElementById('authPhoto').src = user.photoURL || '';
+    document.getElementById('authName').textContent = user.displayName || user.email || '';
+  } else {
+    btn.textContent = '🔑 로그인';
+    userEl.style.display = 'none';
+    setSyncStatus(null);
+  }
+}
+
+document.getElementById('btnAuth').addEventListener('click', async () => {
+  try {
+    if (window.__fbAuth.currentUser) {
+      await window.__fbAuth.signOut();
+    } else {
+      await window.__fbAuth.signInWithPopup(window.__fbProvider);
+    }
+  } catch (e) {
+    console.error('auth error', e);
+    alert('로그인 오류: ' + (e.message || e.code || e));
+  }
+});
+
+window.__fbAuth.onAuthStateChanged(async (user) => {
+  currentUid = user ? user.uid : null;
+  updateAuthUI(user);
+  if (user) await pullAndMerge(user.uid);
+});
 
 // ── Start ──────────────────────────────────────────────────
 if (EXAM_DATA.length === 0) {
