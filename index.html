@@ -90,6 +90,8 @@
 
   .filter-btn:hover { background: var(--nav-hover); color: var(--accent); border-color: var(--accent); }
   .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .filter-btn-wrong:hover { background: #fef2f2; color: #b91c1c; border-color: #dc2626; }
+  .filter-btn-wrong.active { background: #dc2626; color: #fff; border-color: #dc2626; }
 
   .btn-random {
     font-family: 'Noto Sans KR', sans-serif;
@@ -705,6 +707,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
     background: var(--surface2);
   }
 
@@ -712,6 +716,31 @@
     display: flex;
     gap: 8px;
   }
+
+  .attempt-btns {
+    display: flex;
+    gap: 6px;
+  }
+  .btn-attempt {
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 0.78rem;
+    padding: 5px 11px;
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .attempt-count {
+    display: inline-block;
+    margin-left: 4px;
+    min-width: 14px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .btn-wrong:hover, .btn-wrong.flash { background: #fef2f2; border-color: #dc2626; color: #b91c1c; }
+  .btn-correct:hover, .btn-correct.flash { background: #f0fdf4; border-color: #16a34a; color: #15803d; }
 
   .btn-nav {
     font-family: 'Noto Sans KR', sans-serif;
@@ -902,8 +931,9 @@
     .badge { font-size: 0.7rem; padding: 2px 8px; }
     .stopwatch { font-size: 0.7rem; padding: 3px 8px; }
     .q-body { padding: 14px 14px 8px; }
-    .q-footer { padding: 8px 12px; }
+    .q-footer { padding: 8px 12px; gap: 6px; }
     .btn-nav { font-size: 0.78rem; padding: 6px 12px; }
+    .btn-attempt { font-size: 0.72rem; padding: 4px 9px; }
     .nav-pos { font-size: 0.75rem; }
 
     .passage-section { padding: 10px 12px; font-size: 0.86rem; line-height: 1.7; }
@@ -1017,6 +1047,10 @@
         <button class="btn-nav" id="btnPrev">◀ 이전</button>
         <button class="btn-nav" id="btnNext">다음 ▶</button>
       </div>
+      <div class="attempt-btns">
+        <button class="btn-attempt btn-wrong" id="btnMarkWrong" title="이 설문을 틀린 것으로 기록 (+1)">❌ 틀림 <span class="attempt-count" id="wrongCountDisplay">0</span></button>
+        <button class="btn-attempt btn-correct" id="btnMarkCorrect" title="이 설문을 맞춘 것으로 기록 (+1)">✅ 맞음 <span class="attempt-count" id="correctCountDisplay">0</span></button>
+      </div>
       <span class="nav-pos" id="navPos"></span>
     </div>
   </div>
@@ -1109,6 +1143,18 @@ function getViewCount(prob, sq) {
 function incrementViewCount(prob, sq) {
   localStorage.setItem(viewCountKey(prob, sq), String(getViewCount(prob, sq) + 1));
 }
+
+// ── Per-sub-question wrong/correct attempt counts ──
+function attemptKey(prob, sq, kind) {
+  return `${kind}count:${prob.subject || '민사소송법'}:${prob.exam}:${prob.problemNo}:${sq.no}`;
+}
+function getAttemptCount(prob, sq, kind) {
+  const n = parseInt(localStorage.getItem(attemptKey(prob, sq, kind)), 10);
+  return isNaN(n) ? 0 : n;
+}
+function incrementAttemptCount(prob, sq, kind) {
+  localStorage.setItem(attemptKey(prob, sq, kind), String(getAttemptCount(prob, sq, kind) + 1));
+}
 // Shuffle that biases toward items with the fewest reveals (ties random).
 function shuffleByViewCount(indices) {
   return indices
@@ -1159,8 +1205,20 @@ function listSubjects() {
 function applyFilter(exam) {
   activeExam = exam;
   const pool = subjectItems(activeSubject);
-  filtered = exam === 'all' ? pool : pool.filter(item => item.prob.exam === exam);
-  order = shuffleByViewCount([...Array(filtered.length).keys()]);
+  if (exam === 'wrong-only') {
+    filtered = pool.filter(it => getAttemptCount(it.prob, it.sq, 'wrong') > 0);
+    const idxs = [...Array(filtered.length).keys()];
+    // Most-wrong first, ties random
+    idxs.sort((a, b) => {
+      const ca = getAttemptCount(filtered[a].prob, filtered[a].sq, 'wrong');
+      const cb = getAttemptCount(filtered[b].prob, filtered[b].sq, 'wrong');
+      return (cb - ca) || (Math.random() - 0.5);
+    });
+    order = idxs;
+  } else {
+    filtered = exam === 'all' ? pool : pool.filter(item => item.prob.exam === exam);
+    order = shuffleByViewCount([...Array(filtered.length).keys()]);
+  }
   cursor = 0;
   showCurrent();
 }
@@ -1201,7 +1259,8 @@ function renderExamFilter() {
     + `<button class="filter-btn${activeExam === 'all' ? ' active' : ''}" data-exam="all">전체</button>`
     + exams.map(e =>
         `<button class="filter-btn${activeExam === e ? ' active' : ''}" data-exam="${escHtml(e)}">${escHtml(e)}</button>`
-      ).join('');
+      ).join('')
+    + `<button class="filter-btn filter-btn-wrong${activeExam === 'wrong-only' ? ' active' : ''}" data-exam="wrong-only" title="틀린 횟수가 1회 이상인 설문만, 많이 틀린 순">❌ 틀린 문제만</button>`;
 }
 
 function shuffle(arr) {
@@ -1227,6 +1286,10 @@ function showCurrent() {
   document.getElementById('badgeProb').textContent = `문제-${prob.problemNo}`;
   document.getElementById('badgeSq').textContent = `설문(${sq.no})`;
   document.getElementById('badgePts').textContent = `${sq.points}점`;
+
+  // Wrong / correct counts
+  document.getElementById('wrongCountDisplay').textContent = getAttemptCount(prob, sq, 'wrong');
+  document.getElementById('correctCountDisplay').textContent = getAttemptCount(prob, sq, 'correct');
 
   // Always exit quiz mode when moving to a new sub-question
   if (quizMode) endQuiz();
@@ -1260,7 +1323,10 @@ function showCurrent() {
 }
 
 function showEmpty() {
-  document.getElementById('passageText').textContent = '선택된 회차에 문제가 없습니다.';
+  const msg = activeExam === 'wrong-only'
+    ? '아직 틀린 것으로 기록한 설문이 없습니다. 문제를 풀고 ❌ 틀림 버튼을 눌러보세요.'
+    : '선택된 회차에 문제가 없습니다.';
+  document.getElementById('passageText').textContent = msg;
   document.getElementById('subqText').textContent = '';
   document.getElementById('answerContent').innerHTML = '';
   document.getElementById('navPos').textContent = '0 / 0';
@@ -1951,6 +2017,20 @@ function bindEvents() {
   document.getElementById('btnNext').addEventListener('click', () => {
     if (cursor < filtered.length - 1) { cursor++; showCurrent(); }
   });
+
+  // ── Mark current sub-question as wrong / correct ──
+  function markAttempt(kind) {
+    if (filtered.length === 0) return;
+    const { prob, sq } = filtered[order[cursor]];
+    incrementAttemptCount(prob, sq, kind);
+    const btn = document.getElementById(kind === 'wrong' ? 'btnMarkWrong' : 'btnMarkCorrect');
+    const disp = document.getElementById(kind === 'wrong' ? 'wrongCountDisplay' : 'correctCountDisplay');
+    disp.textContent = getAttemptCount(prob, sq, kind);
+    btn.classList.add('flash');
+    setTimeout(() => btn.classList.remove('flash'), 350);
+  }
+  document.getElementById('btnMarkWrong').addEventListener('click', () => markAttempt('wrong'));
+  document.getElementById('btnMarkCorrect').addEventListener('click', () => markAttempt('correct'));
 
   document.getElementById('btnToggle').addEventListener('click', () => {
     answerRevealed ? hideAnswer() : revealAnswer();
