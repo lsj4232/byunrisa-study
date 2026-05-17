@@ -92,6 +92,8 @@
   .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   .filter-btn-wrong:hover { background: #fef2f2; color: #b91c1c; border-color: #dc2626; }
   .filter-btn-wrong.active { background: #dc2626; color: #fff; border-color: #dc2626; }
+  .filter-btn-review:hover { background: #fff7ed; color: #b45309; border-color: #d97706; }
+  .filter-btn-review.active { background: #d97706; color: #fff; border-color: #d97706; }
 
   .btn-random {
     font-family: 'Noto Sans KR', sans-serif;
@@ -1224,6 +1226,33 @@ function getAttemptCount(prob, sq, kind) {
 function incrementAttemptCount(prob, sq, kind) {
   localStorage.setItem(attemptKey(prob, sq, kind), String(getAttemptCount(prob, sq, kind) + 1));
 }
+
+// ── Spaced repetition (간격 반복) — simple intervals ──
+// streak counts consecutive "맞음"s; "틀림" resets streak to 0.
+// Next interval: wrong=1d, then 3d, 7d, 14d, 30d, 90d+
+const SRS_INTERVALS_DAYS = [3, 7, 14, 30, 90];
+const DAY_MS = 24 * 60 * 60 * 1000;
+function srsKey(prob, sq) {
+  return `srs:${prob.subject || '민사소송법'}:${prob.exam}:${prob.problemNo}:${sq.no}`;
+}
+function getSrs(prob, sq) {
+  const raw = localStorage.getItem(srsKey(prob, sq));
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+function updateSrs(prob, sq, kind) {
+  const cur = getSrs(prob, sq) || { nextReviewAt: 0, streak: 0 };
+  let streak, intervalDays;
+  if (kind === 'wrong') {
+    streak = 0;
+    intervalDays = 1;
+  } else {
+    streak = cur.streak + 1;
+    intervalDays = SRS_INTERVALS_DAYS[Math.min(streak - 1, SRS_INTERVALS_DAYS.length - 1)];
+  }
+  const nextReviewAt = Date.now() + intervalDays * DAY_MS;
+  localStorage.setItem(srsKey(prob, sq), JSON.stringify({ nextReviewAt, streak }));
+}
 // Shuffle that biases toward items with the fewest reveals (ties random).
 function shuffleByViewCount(indices) {
   return indices
@@ -1284,6 +1313,20 @@ function applyFilter(exam) {
       return (cb - ca) || (Math.random() - 0.5);
     });
     order = idxs;
+  } else if (exam === 'review-due') {
+    const now = Date.now();
+    filtered = pool.filter(it => {
+      const s = getSrs(it.prob, it.sq);
+      return s && s.nextReviewAt <= now;
+    });
+    const idxs = [...Array(filtered.length).keys()];
+    // Most overdue first (earliest nextReviewAt)
+    idxs.sort((a, b) => {
+      const sa = getSrs(filtered[a].prob, filtered[a].sq).nextReviewAt;
+      const sb = getSrs(filtered[b].prob, filtered[b].sq).nextReviewAt;
+      return sa - sb;
+    });
+    order = idxs;
   } else {
     filtered = exam === 'all' ? pool : pool.filter(item => item.prob.exam === exam);
     order = shuffleByViewCount([...Array(filtered.length).keys()]);
@@ -1329,7 +1372,8 @@ function renderExamFilter() {
     + exams.map(e =>
         `<button class="filter-btn${activeExam === e ? ' active' : ''}" data-exam="${escHtml(e)}">${escHtml(e)}</button>`
       ).join('')
-    + `<button class="filter-btn filter-btn-wrong${activeExam === 'wrong-only' ? ' active' : ''}" data-exam="wrong-only" title="틀린 횟수가 1회 이상인 설문만, 많이 틀린 순">❌ 틀린 문제만</button>`;
+    + `<button class="filter-btn filter-btn-wrong${activeExam === 'wrong-only' ? ' active' : ''}" data-exam="wrong-only" title="틀린 횟수가 1회 이상인 설문만, 많이 틀린 순">❌ 틀린 문제만</button>`
+    + `<button class="filter-btn filter-btn-review${activeExam === 'review-due' ? ' active' : ''}" data-exam="review-due" title="간격 반복 학습 — 오늘 복습할 시점이 된 설문만">🔔 복습할 문제</button>`;
 }
 
 function shuffle(arr) {
@@ -1392,9 +1436,14 @@ function showCurrent() {
 }
 
 function showEmpty() {
-  const msg = activeExam === 'wrong-only'
-    ? '아직 틀린 것으로 기록한 설문이 없습니다. 문제를 풀고 ❌ 틀림 버튼을 눌러보세요.'
-    : '선택된 회차에 문제가 없습니다.';
+  let msg;
+  if (activeExam === 'wrong-only') {
+    msg = '아직 틀린 것으로 기록한 설문이 없습니다. 문제를 풀고 ❌ 틀림 버튼을 눌러보세요.';
+  } else if (activeExam === 'review-due') {
+    msg = '오늘 복습할 문제가 없습니다 🎉 ❌ 틀림 또는 ✅ 맞음을 누르면 복습 일자가 자동으로 잡힙니다.';
+  } else {
+    msg = '선택된 회차에 문제가 없습니다.';
+  }
   document.getElementById('passageText').textContent = msg;
   document.getElementById('subqText').textContent = '';
   document.getElementById('answerContent').innerHTML = '';
@@ -2092,6 +2141,7 @@ function bindEvents() {
     if (filtered.length === 0) return;
     const { prob, sq } = filtered[order[cursor]];
     incrementAttemptCount(prob, sq, kind);
+    updateSrs(prob, sq, kind);
     const btn = document.getElementById(kind === 'wrong' ? 'btnMarkWrong' : 'btnMarkCorrect');
     const disp = document.getElementById(kind === 'wrong' ? 'wrongCountDisplay' : 'correctCountDisplay');
     disp.textContent = getAttemptCount(prob, sq, kind);
@@ -2347,7 +2397,7 @@ function bindEvents() {
 // and merge (max() for counters, cloud-wins for highlights/notes).
 // Any subsequent localStorage write to a synced prefix triggers a debounced
 // push of the full snapshot.
-const SYNC_PREFIXES = ['viewcount:', 'wrongcount:', 'correctcount:', 'hl:', 'note:'];
+const SYNC_PREFIXES = ['viewcount:', 'wrongcount:', 'correctcount:', 'hl:', 'note:', 'srs:'];
 const COUNTER_PREFIXES = ['viewcount:', 'wrongcount:', 'correctcount:'];
 let currentUid = null;
 let pushTimer = null;
