@@ -1093,9 +1093,32 @@ let cursor = 0;      // current position in order
 let answerRevealed = false;
 let activeExam = 'all';
 let activeSubject = '민사소송법';
+let revealedThisShow = false;
 
 const HL_AREAS = ['passage', 'subq', 'answer'];
 const currentHighlights = { passage: [], subq: [], answer: [] };
+
+// ── Per-sub-question view counts (incremented when answer revealed) ─
+function viewCountKey(prob, sq) {
+  return `viewcount:${prob.subject || '민사소송법'}:${prob.exam}:${prob.problemNo}:${sq.no}`;
+}
+function getViewCount(prob, sq) {
+  const n = parseInt(localStorage.getItem(viewCountKey(prob, sq)), 10);
+  return isNaN(n) ? 0 : n;
+}
+function incrementViewCount(prob, sq) {
+  localStorage.setItem(viewCountKey(prob, sq), String(getViewCount(prob, sq) + 1));
+}
+// Shuffle that biases toward items with the fewest reveals (ties random).
+function shuffleByViewCount(indices) {
+  return indices
+    .map(i => {
+      const { prob, sq } = filtered[i];
+      return { i, count: getViewCount(prob, sq), rand: Math.random() };
+    })
+    .sort((a, b) => a.count - b.count || a.rand - b.rand)
+    .map(x => x.i);
+}
 
 // ── Init ───────────────────────────────────────────────────
 function init() {
@@ -1137,7 +1160,7 @@ function applyFilter(exam) {
   activeExam = exam;
   const pool = subjectItems(activeSubject);
   filtered = exam === 'all' ? pool : pool.filter(item => item.prob.exam === exam);
-  order = shuffle([...Array(filtered.length).keys()]);
+  order = shuffleByViewCount([...Array(filtered.length).keys()]);
   cursor = 0;
   showCurrent();
 }
@@ -1196,6 +1219,7 @@ function showCurrent() {
     return;
   }
 
+  revealedThisShow = false;
   const { prob, sq } = filtered[order[cursor]];
 
   // Badges
@@ -1905,12 +1929,17 @@ function revealAnswer() {
   document.getElementById('overlay').classList.add('gone');
   document.getElementById('btnToggle').textContent = '정답 숨기기';
   document.getElementById('btnToggle').classList.add('revealed');
+  if (filtered.length > 0 && !revealedThisShow) {
+    revealedThisShow = true;
+    const { prob, sq } = filtered[order[cursor]];
+    incrementViewCount(prob, sq);
+  }
 }
 
 // ── Events ─────────────────────────────────────────────────
 function bindEvents() {
   document.getElementById('btnRandom').addEventListener('click', () => {
-    order = shuffle([...Array(filtered.length).keys()]);
+    order = shuffleByViewCount([...Array(filtered.length).keys()]);
     cursor = 0;
     showCurrent();
   });
