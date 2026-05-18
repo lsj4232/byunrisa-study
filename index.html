@@ -1476,7 +1476,13 @@ function updateSrs(prob, sq, kind) {
     streak = cur.streak + 1;
     intervalDays = SRS_INTERVALS_DAYS[Math.min(streak - 1, SRS_INTERVALS_DAYS.length - 1)];
   }
-  const nextReviewAt = Date.now() + intervalDays * DAY_MS;
+  // Next review opens at MIDNIGHT of (today + intervalDays), so anything
+  // marked today is visible any time the following day(s) — not bound to
+  // the exact clock hour when the user marked it.
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + intervalDays);
+  const nextReviewAt = d.getTime();
   localStorage.setItem(srsKey(prob, sq), JSON.stringify({ nextReviewAt, streak }));
 }
 // Shuffle that biases toward items with the fewest reveals (ties random).
@@ -1687,7 +1693,24 @@ function showEmpty() {
   } else if (activeExam === 'wrong-only') {
     msg = '아직 틀린 것으로 기록한 설문이 없습니다. 문제를 풀고 ❌ 틀림 버튼을 눌러보세요.';
   } else if (activeExam === 'review-due') {
-    msg = '오늘 복습할 문제가 없습니다 🎉 ❌ 틀림 또는 ✅ 맞음을 누르면 복습 일자가 자동으로 잡힙니다.';
+    // Diagnostic: how many items are scheduled, when's the next?
+    const pool = subjectItems(activeSubject);
+    let scheduled = 0;
+    let nextDue = Infinity;
+    for (const it of pool) {
+      const s = getSrs(it.prob, it.sq);
+      if (s) {
+        scheduled++;
+        if (s.nextReviewAt < nextDue) nextDue = s.nextReviewAt;
+      }
+    }
+    if (scheduled === 0) {
+      msg = '아직 ❌/✅ 표시한 설문이 없습니다. 문제를 풀고 두 버튼 중 하나를 눌러보세요. SRS가 자동으로 복습 일자를 잡아줍니다.';
+    } else {
+      const now = Date.now();
+      const days = Math.max(0, Math.ceil((nextDue - now) / (24 * 60 * 60 * 1000)));
+      msg = `오늘 복습할 문제가 없습니다 🎉  현재 ${scheduled}개 설문이 SRS에 등록되어 있고, 가장 가까운 복습 예정은 약 ${days}일 후입니다.`;
+    }
   } else {
     msg = '선택된 회차에 문제가 없습니다.';
   }
